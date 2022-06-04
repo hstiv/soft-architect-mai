@@ -8,7 +8,9 @@ Usage
 	- ./build/server.exe --ip 192.168.1.50 & ./build/tests.exe --ip 192.168.1.50
 	- kill $(pidof server.exe)
 - make
-	- make lab2
+	- make init
+	- make test
+	- make clean
 
 
 **Tests**

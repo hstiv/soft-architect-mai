@@ -101,10 +101,15 @@ grpc:
 
 env: ness config-docker google-test poco apache-ingite rabbit-mq kafka-lib redis grpc
 
-lab2:
+init:
 	@cd ./docker && sudo docker-compose build
 	@cd ./docker && sudo docker-compose up &
 	@cmake -S . -B build
-	./build/server.exe & ./build/tests.exe
+
+test:
+	@./build/server.exe & 
+	./build/tests.exe
+
+clean:
 	kill $(pidof server.exe)
 	@cd ./docker && sudo docker-compose down
