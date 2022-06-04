@@ -95,16 +95,21 @@ using Poco::Util::ServerApplication;
 using Poco::Data::Statement;
 using SqlSession = Poco::Data::Session;
 
+#define          DESC   "app.exe --cache_servers=<cache server [address]:[post]>"
+#define     ERROR_404   "<html lang=\"ru\"> \
+                        <head><title>Web Server</title></head> \
+                        <body><h1>Error 404: page not found</h1></body> \
+                        </html>"
+#define TEMPLATES_PATH	"templates"
 namespace Config // глобальные переменные
 {
-    string host     = "127.0.0.1",
-           login    = "",
-           password = "",
-           database = "",
-           ip = "";
+    string host     = "localhost",
+           login    = "stud",
+           password = "stud",
+           database = "persons_db",
+           ip = "192.168.1.50";
     int port = 8080;
-    int sql_port = -1;
-    string cache_servers = "";
+    string cache_servers = "127.0.0.1:10800,127.0.0.1:10900";
 }
 
 #define SQL_HANDLE(...)                                   \
@@ -134,8 +139,7 @@ SqlSession *create_SQL_session()  // Создаём сессию с базой �
     string connection_string = "host=" + Config::host +           
                                ";user=" +  Config::login + 
                                ";db=" +  Config::database + 
-                               ";password=" +  Config::password +
-                               ";port=" + STR(Config::sql_port);
+                               ";password=" +  Config::password;
 
     Poco::Data::MySQL::Connector::registerConnector();
     SqlSession *session_ptr = NULL;
@@ -207,72 +211,5 @@ namespace Cache
 }
 
 /* ================= Общие функции ================= */
-
-bool starts_with(const string &str, const string &prefix)
-{
-    if(prefix.size() > str.size())
-        return false;
-
-    int i;
-    for(i = 0; i < prefix.size(); i++)
-    {
-        if(str[i] != prefix[i])
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-static char scheme[] = 
-"usage: ./%-12s %-30s \\\n"
-"         %-12s %-30s \\\n"
-"         %-12s %-30s \\\n"
-"         %-12s %-30s \\\n"
-"         %-12s %-30s \\\n"
-"         %-12s %-30s \n"
-"example: ./%-12s %-30s \\\n"
-"           %-12s %-30s \\\n"
-"           %-12s %-30s \\\n"
-"           %-12s %-30s \\\n"
-"           %-12s %-30s \\\n"
-"           %-12s %-30s \n";
-
-std::map<string, string> argv2map(int argc, char *argv[], const string &desc)
-{
-    int i;
-    std::map<string, string> args;
-    for(i = 1; i < argc; i++)
-    {
-        int j;
-        string arg(argv[i]);
-        j = std::find(arg.begin(), arg.end(), '=') - arg.begin();
-        if(j == arg.size())
-        {
-            cout << "ERROR in argc[" + STR(i) + "]" << endl;
-            cout << desc << endl;
-            return args;
-        }
-        args[arg.substr(0, j)] = arg.substr(j + 1, arg.size() - j);
-    }
-    return args;
-}
-
-std::map<string, string> argv2map(int argc, char *argv[])
-{
-    string desc = "";
-    return argv2map(argc, argv, desc);
-}
-
-#define ARG_COUNT 6
-
-#define CHECK_ARG(NAME, ...)                               \
-    if(args.find("--" #NAME) == args.end())                \
-    {                                                      \
-        cout << "ERROR: not find --" #NAME " arg" << endl; \
-        cout << DESC << endl;                              \
-        return 0;                                          \
-    }                                                      \
-    Config::NAME = __VA_ARGS__(args["--" #NAME]);          \
 
 #endif

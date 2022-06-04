@@ -20,16 +20,27 @@ public:
         {
             std::string req_login = form.get("login"); // получаем логин
 
+            // Пытаемся считать из кеша
+            string json;
+            if (Cache::get(req_login, json))
+            {
+                ostr << json;
+                cout << "read " + req_login + " from cache" << endl;
+                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
+                return;
+            }
+
+            cout << "cache missed for " + req_login  << endl;
+
+            // Обращение к БД
             auto session_ptr = unique_ptr<SqlSession>(create_SQL_session());
             auto &session = *session_ptr;
-        
             Person person;
             bool success = true;
 
             SQL_HANDLE(
                 Statement SELECT(session);
-                SELECT << "SELECT login, first_name, last_name, age FROM Person WHERE login=?" <<
-                          " -- sharding:" << STR(get_shard_id(req_login)),
+                SELECT << "SELECT login, first_name, last_name, age FROM Person WHERE login=?",
                     Keywords::into(person.login),
                     Keywords::into(person.first_name),
                     Keywords::into(person.last_name),
@@ -43,25 +54,26 @@ public:
             )
             catch(std::logic_error &e) // пользователь не найден
             {
-                cout << req_login << " not found" << endl;
                 success = false;
             }
 
             try
             {
-                Poco::JSON::Array arr;
-                
+                string res = "";
+                Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
                 if(success)
                 {
-                    Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
                     root->set("login", person.login);
                     root->set("first_name", person.first_name);
                     root->set("last_name", person.last_name);
                     root->set("age", person.age);
-                    arr.add(root);
                 }
-                
-                Poco::JSON::Stringifier::stringify(arr, ostr);
+                std::stringstream ss;
+                Poco::JSON::Stringifier::stringify(root, ss);
+                res = ss.str();
+
+                ostr << res; // отправляем ответ клиенту
+                Cache::put(req_login, res); // сохраняем ответ в кеш (сквозное чтение)
             }
             catch (...)
             {
@@ -71,73 +83,56 @@ public:
         }
         else if(method == "GET" && form.has("first_name") && form.has("last_name"))
         {
+            /* Поиск по маске не кешируем */
+
             string first_name_mask = form.get("first_name"),
                    last_name_mask =  form.get("last_name");
 
-            /* Функция, которую обрабатывает один поток */
-            auto send_request = [](int shard_id,
-                                   string first_name_mask, string last_name_mask, 
-                                   vector<Person> *result) -> void 
-            {
-                auto session_ptr = unique_ptr<SqlSession>(create_SQL_session());
-                Poco::Data::Session &session = *session_ptr;
-            
-                Person person;
+            auto session_ptr = unique_ptr<SqlSession>(create_SQL_session());
+            Poco::Data::Session &session = *session_ptr;
+        
+            Person person;
+            vector<Person> result;
 
-                SQL_HANDLE(
-                    Statement SELECT(session);
-                    SELECT << "SELECT login, first_name, last_name, age FROM Person WHERE first_name LIKE ? AND last_name LIKE ?" <<
-                              " -- sharding:" << STR(shard_id),
-                        Keywords::into(person.login),
-                        Keywords::into(person.first_name),
-                        Keywords::into(person.last_name),
-                        Keywords::into(person.age),
-                        Keywords::use(first_name_mask),
-                        Keywords::use(last_name_mask),
-                        Keywords::range(0, 1);
+            SQL_HANDLE(
+                Statement SELECT(session);
+                SELECT << "SELECT login, first_name, last_name, age FROM Person WHERE first_name LIKE ? AND last_name LIKE ?",
+                    Keywords::into(person.login),
+                    Keywords::into(person.first_name),
+                    Keywords::into(person.last_name),
+                    Keywords::into(person.age),
+                    Keywords::use(first_name_mask),
+                    Keywords::use(last_name_mask),
+                    Keywords::range(0, 1);
 
-                    while(!SELECT.done())
-                    {
-                        if(SELECT.execute())
-                            result->push_back(person);
-                    }
-                )
-            };
+                while(!SELECT.done())
+                {
+                    if(SELECT.execute())
+                        result.push_back(person);
+                }
+            )
 
-            vector<vector<Person> *> shards_result(Config::n_shards);
-            vector<thread *> vec_threads(Config::n_shards);
-            int i;
-            for(i = 0; i < Config::n_shards; i++) // запускаем процессы ко всем шардам, результат в shards_result
-            {
-                shards_result[i] = new vector<Person>(0); // заказ вектора
-                vec_threads[i] = new thread(send_request, i, 
-                                            first_name_mask, last_name_mask,
-                                            shards_result[i]);
-            }
-            WAIT_ALL_THREADS(vec_threads);
-            
             try // отправляем результаты пользователю
             {
                 Poco::JSON::Array arr;
-                int i, j;
-                for(i = 0; i < shards_result.size(); i++) // цикл по шардам
-                    for(j = 0; j < shards_result[i]->size(); j++) // цикл по ответам внутри шарда
-                    {
-                        Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
-                        root->set("login", shards_result[i]->at(j).login);
-                        root->set("first_name", shards_result[i]->at(j).first_name);
-                        root->set("last_name", shards_result[i]->at(j).last_name);
-                        root->set("age", shards_result[i]->at(j).age);
-                        arr.add(root);
-                    }
+                int i;
+                for(i = 0; i < result.size(); i++)
+                {
+                    Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
+                    root->set("login", result[i].login);
+                    root->set("first_name", result[i].first_name);
+                    root->set("last_name", result[i].last_name);
+                    root->set("age", result[i].age);
+                    arr.add(root);
+                }
                 Poco::JSON::Stringifier::stringify(arr, ostr);
             }
             catch (...)
             {
                 std::cout << "exception" << std::endl;
+                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR);
+                return;
             }
-            for(i = 0; i < shards_result.size(); i++) // очистка памяти
-                delete shards_result[i];
             response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
         }
         else if(method == "POST" && form.has("login") && form.has("last_name") && form.has("first_name") && form.has("age"))
@@ -155,7 +150,7 @@ public:
             /* Проверяем есть ли такой человек*/
             SQL_HANDLE(
                 Statement SELECT(session);
-                SELECT << "SELECT login FROM Person WHERE login=?" << " -- sharding:" << STR(get_shard_id(login)),
+                SELECT << "SELECT login FROM Person WHERE login=?",
                     Keywords::use(login),
                     Keywords::range(0, 1);
                 SELECT.execute();
@@ -164,12 +159,13 @@ public:
                 if (rs.moveFirst()) success = false;
             )
             
-            if(success) // добавляем
+            if(success)
             {
+                // добавляем в базу
                 SQL_HANDLE(
                     Statement INSERT(session);
                     INSERT << "INSERT INTO Person (login, first_name, last_name, age)"
-                              "VALUES (?, ?, ?, ?)" << " -- sharding:" << STR(get_shard_id(login)),
+                              "VALUES (?, ?, ?, ?)",
                         Keywords::use(login),
                         Keywords::use(first_name),
                         Keywords::use(last_name),
@@ -177,6 +173,17 @@ public:
                         Keywords::range(0, 1);
                     INSERT.execute();
                 )
+
+                // добавляем в кеш (сквозная запись)
+                Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
+                root->set("login", login);
+                root->set("first_name", first_name);
+                root->set("last_name", last_name);
+                root->set("age", age);
+                std::stringstream ss;
+                Poco::JSON::Stringifier::stringify(root, ss);
+                string res = ss.str();
+                Cache::put(login, res);
             }
 
             ostr << "<html lang=\"ru\">"

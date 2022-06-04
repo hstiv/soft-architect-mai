@@ -13,11 +13,14 @@ find_package(GTest REQUIRED)
 find_package(Threads)
 find_package(ZLIB)
 find_package(Poco REQUIRED COMPONENTS Foundation Util Net XML JSON Crypto NetSSL)
+find_package(Java 1.8 REQUIRED)
+find_package(JNI REQUIRED)
 
 if(NOT ${Poco_FOUND})
     message(FATAL_ERROR "Poco C++ Libraries not found.")
 endif()
 
+include_directories(SYSTEM ${IGNITE_INCLUDE_DIR} ${JNI_INCLUDE_DIRS})
 include_directories(${Poco_INCLUDE_DIRS})
 include_directories(${GTEST_INCLUDE_DIRS})
 include_directories("/usr/include/mysql")
@@ -37,6 +40,10 @@ foreach(EXE_NAME ${EXE_SERVER} ${EXE_TESTS}) # Сборка двух испол�
                           ${GTEST_LIBRARIES}
                           "PocoData"
                           "PocoDataMySQL"
+                          "ignite-binary"
+                          "ignite-common"
+                          ${IGNITE_JNI_LIB}
+                          "ignite-thin-client"
                           "mysqlclient"
                           ZLIB::ZLIB)
     set_target_properties(${EXE_NAME} PROPERTIES LINKER_LANGUAGE CXX)

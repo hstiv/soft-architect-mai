@@ -117,17 +117,6 @@ TEST(test_add, basic_test_set) // добавление записей с пос�
 
 int main(int argc, char *argv[])
 {
-    string DESC = get_description(string("tests.exe"));
-
-    auto args = argv2map(argc, argv, DESC);  // разбор входных параметров
-
-    CHECK_ARG(ip)
-    CHECK_ARG(login)
-    CHECK_ARG(password)
-    CHECK_ARG(database)
-    CHECK_ARG(sql_port, stoi)
-    CHECK_ARG(cache_servers)
-
-    testing::InitGoogleTest(&argc, argv);
+    testing::InitGoogleTest();
     return RUN_ALL_TESTS();
 }
