@@ -1,9 +1,7 @@
 #include "../includes/headers.hpp"
 
 /*
- * Запуск тестов: $ build/tests.exe --ip=<ip вашей машины>
- * Внимание!
- * Прежде, чем запускать тесты, запустите кластер и сервер (см. README.md)
+ * !!Run server.exe before!!
 */
 
 void recreate_table(int shard_id)
