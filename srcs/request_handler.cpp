@@ -18,19 +18,7 @@ public:
         
         if (method == "GET" && form.has("login"))
         {
-            std::string req_login = form.get("login"); // получаем логин
-
-            // Пытаемся считать из кеша
-            string json;
-            if (Cache::get(req_login, json))
-            {
-                ostr << json;
-                cout << "read " + req_login + " from cache" << endl;
-                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
-                return;
-            }
-
-            cout << "cache missed for " + req_login  << endl;
+            std::string login = form.get("login"); // получаем логин
 
             // Обращение к БД
             auto session_ptr = unique_ptr<SqlSession>(create_SQL_session());
@@ -45,7 +33,7 @@ public:
                     Keywords::into(person.first_name),
                     Keywords::into(person.last_name),
                     Keywords::into(person.age),
-                    Keywords::use(req_login),
+                    Keywords::use(login),
                     Keywords::range(0, 1);
                 SELECT.execute();
 
@@ -73,18 +61,17 @@ public:
                 res = ss.str();
 
                 ostr << res; // отправляем ответ клиенту
-                Cache::put(req_login, res); // сохраняем ответ в кеш (сквозное чтение)
             }
             catch (...)
             {
                 std::cout << "exception" << std::endl;
+                response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR);
+                return;
             }
             response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
         }
         else if(method == "GET" && form.has("first_name") && form.has("last_name"))
         {
-            /* Поиск по маске не кешируем */
-
             string first_name_mask = form.get("first_name"),
                    last_name_mask =  form.get("last_name");
 
@@ -142,59 +129,36 @@ public:
                    first_name = form.get("first_name");
             int age = atoi(form.get("age").c_str());
 
-            auto session_ptr = unique_ptr<SqlSession>(create_SQL_session());
-            auto &session = *session_ptr;
+            static cppkafka::Configuration config = {{"metadata.broker.list", Config::queue}};
 
-            bool success = true;
-
-            /* Проверяем есть ли такой человек*/
-            SQL_HANDLE(
-                Statement SELECT(session);
-                SELECT << "SELECT login FROM Person WHERE login=?",
-                    Keywords::use(login),
-                    Keywords::range(0, 1);
-                SELECT.execute();
-
-                Poco::Data::RecordSet rs(SELECT);
-                if (rs.moveFirst()) success = false;
-            )
-            
-            if(success)
+            static cppkafka::Producer producer(config);
+            static std::mutex mtx;
+            std::lock_guard<std::mutex> lock(mtx);
+            std::stringstream ss;
+            Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
+            root->set("login", login);
+            root->set("first_name", first_name);
+            root->set("last_name", last_name);
+            root->set("age", age);
+            Poco::JSON::Stringifier::stringify(root, ss);
+            std::string message = ss.str();
+            bool not_sent = true;
+            while (not_sent)
             {
-                // добавляем в базу
-                SQL_HANDLE(
-                    Statement INSERT(session);
-                    INSERT << "INSERT INTO Person (login, first_name, last_name, age)"
-                              "VALUES (?, ?, ?, ?)",
-                        Keywords::use(login),
-                        Keywords::use(first_name),
-                        Keywords::use(last_name),
-                        Keywords::use(age),
-                        Keywords::range(0, 1);
-                    INSERT.execute();
-                )
-
-                // добавляем в кеш (сквозная запись)
-                Poco::JSON::Object::Ptr root = new Poco::JSON::Object();
-                root->set("login", login);
-                root->set("first_name", first_name);
-                root->set("last_name", last_name);
-                root->set("age", age);
-                std::stringstream ss;
-                Poco::JSON::Stringifier::stringify(root, ss);
-                string res = ss.str();
-                Cache::put(login, res);
+                try
+                {
+                    producer.produce(cppkafka::MessageBuilder(Config::topic).partition(0).payload(message));
+                    not_sent = false;
+                }
+                catch (...)
+                {
+                }
             }
 
-            ostr << "<html lang=\"ru\">"
-                    "<head><title>Web Server</title></head>"
-                    "<body><h1>" + (success ? string("OK") : string("Already exists")) + "</h1></body>"
-                    "</html>";
+            root = new Poco::JSON::Object();
+            root->set("status", "OK");
+            Poco::JSON::Stringifier::stringify(root, ostr);
             response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
-        }
-        else
-        {
-            response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST);
         }
     }
 

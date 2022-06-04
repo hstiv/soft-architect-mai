@@ -59,9 +59,11 @@
 #include "Poco/Util/OptionSet.h"
 #include "Poco/Util/HelpFormatter.h"
 
-#include <ignite/thin/ignite_client.h>
-#include <ignite/thin/ignite_client_configuration.h>
-#include <ignite/thin/cache/cache_peek_mode.h>
+#include <mutex>
+#include <csignal>
+#include <cppkafka/cppkafka.h>
+#include <cppkafka/consumer.h>
+#include <cppkafka/configuration.h>
 
 using std::cout;
 using std::endl;
@@ -95,21 +97,27 @@ using Poco::Util::ServerApplication;
 using Poco::Data::Statement;
 using SqlSession = Poco::Data::Session;
 
-#define          DESC   "app.exe --cache_servers=<cache server [address]:[post]>"
+#define          DESC   "server|tests.exe --cache_servers=<cache server [address]:[post]>"
 #define     ERROR_404   "<html lang=\"ru\"> \
                         <head><title>Web Server</title></head> \
                         <body><h1>Error 404: page not found</h1></body> \
                         </html>"
 #define TEMPLATES_PATH	"templates"
+
 namespace Config // глобальные переменные
 {
-    string host     = "localhost",
+    string host     = "127.0.0.1",
            login    = "stud",
            password = "stud",
            database = "persons_db",
-           ip = "192.168.1.50";
-    int port = 8080;
-    string cache_servers = "127.0.0.1:10800,127.0.0.1:10900";
+           ip       = "192.168.1.50",
+           read     = "127.0.0.1",
+           write    = "127.0.0.1",
+           queue    = "127.0.0.1:9092",
+           topic    = "mon_server";
+
+    int port = 8080; // порт сервера
+    int group_id = 0;
 }
 
 #define SQL_HANDLE(...)                                   \
@@ -149,67 +157,5 @@ SqlSession *create_SQL_session()  // Создаём сессию с базой �
     )
     return session_ptr;
 }
-
-/* =================      Кеш      ================= */
-
-namespace Cache
-{
-    static ignite::thin::IgniteClient _client;
-    static ignite::thin::cache::CacheClient<string, string> _cache;
-
-    void init()
-    {
-        ignite::thin::IgniteClientConfiguration cfg;
-        cfg.SetEndPoints(Config::cache_servers);
-        cfg.SetPartitionAwareness(true);
-        try
-        {
-            _client = ignite::thin::IgniteClient::Start(cfg);
-            _cache = _client.GetOrCreateCache<string, string>("persons");
-        }
-        catch (ignite::IgniteError* err)
-        {
-            cout << "error:" << err->what() << endl;
-            throw;
-        }
-    }
-
-    void put(string &login, string &val)
-    {
-        _cache.Put(login, val);
-    }
-
-    void remove(string &login)
-    {
-        _cache.Remove(login);
-    }
-
-    int size()
-    {
-        return _cache.GetSize(ignite::thin::cache::CachePeekMode::ALL);
-    }
-
-    bool get(string &login, string &val) // val - json-строка 
-    {
-        try
-        {
-            val = _cache.Get(login);
-            return val != "";
-        }
-        catch(...)
-        {
-            val = "";
-            return false;
-        }
-    }
-
-    void remove_all()
-    {
-        _cache.RemoveAll();;
-    }
-
-}
-
-/* ================= Общие функции ================= */
 
 #endif

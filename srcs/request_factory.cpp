@@ -70,8 +70,6 @@ protected:
                            svs, new HTTPServerParams);
 
             std::cout << "Started server on " << Config::ip << ":" << STR(port) << std::endl;
-            Cache::init();
-            Cache::remove_all();
             srv.start();
 
             waitForTerminationRequest();
