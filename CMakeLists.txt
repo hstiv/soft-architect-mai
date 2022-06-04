@@ -4,6 +4,9 @@ project(LR1 C CXX)
 
 SET (EXE_SERVER "server.exe")
 SET (EXE_TESTS "tests.exe")
+SET (HEADERS includes/headers.hpp)
+SET (SRCS srcs/server.cpp)
+SET (TESTS tests/tests.cpp)
 
 find_package(OpenSSL)
 find_package(GTest REQUIRED)
@@ -22,8 +25,8 @@ include_directories("/usr/local/include/mysql")
 include_directories(${Boost_INCLUDE_DIR})
 link_directories("/usr/local/lib")
 
-add_executable(${EXE_SERVER} server.cpp)
-add_executable(${EXE_TESTS} tests.cpp)
+add_executable(${EXE_SERVER} ${SRCS} ${HEADER})
+add_executable(${EXE_TESTS} ${TESTS} ${HEADER})
 
 foreach(EXE_NAME ${EXE_SERVER} ${EXE_TESTS}) # Сборка двух исполняемых файлов
     target_include_directories(${EXE_NAME} PRIVATE "${CMAKE_BINARY_DIR}")
