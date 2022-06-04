@@ -1,4 +1,4 @@
-.PHONY:			env
+.PHONY:			env lab1 lab2
 
 ness:
 	@sudo apt-get update
@@ -100,4 +100,11 @@ grpc:
 
 
 env: ness config-docker google-test poco apache-ingite rabbit-mq kafka-lib redis grpc
-	
+
+lab2:
+	@cd ./docker && sudo docker-compose build
+	@cd ./docker && sudo docker-compose up &
+	@cmake -S . -B build
+	./build/server.exe & ./build/tests.exe
+	kill $(pidof server.exe)
+	@cd ./docker && sudo docker-compose down
