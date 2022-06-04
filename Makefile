@@ -101,7 +101,7 @@ grpc:
 
 env: ness config-docker google-test poco apache-ingite rabbit-mq kafka-lib redis grpc
 
-lab2:
+lab3:
 	@cd ./docker && sudo docker-compose build
 	@cd ./docker && sudo docker-compose up &
 	@cmake -S . -B build

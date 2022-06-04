@@ -2,7 +2,6 @@
 #define HEADERS_HPP
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -49,12 +48,20 @@
 #include "Poco/Exception.h"
 #include "Poco/ThreadPool.h"
 #include "Poco/StreamCopier.h"
+
 #include "Poco/JSON/Object.h"
+#include "Poco/JSON/Parser.h"
+
+#include "Poco/Dynamic/Var.h"
 
 #include "Poco/Util/ServerApplication.h"
 #include "Poco/Util/Option.h"
 #include "Poco/Util/OptionSet.h"
 #include "Poco/Util/HelpFormatter.h"
+
+#include <ignite/thin/ignite_client.h>
+#include <ignite/thin/ignite_client_configuration.h>
+#include <ignite/thin/cache/cache_peek_mode.h>
 
 using std::cout;
 using std::endl;
@@ -88,24 +95,16 @@ using Poco::Util::ServerApplication;
 using Poco::Data::Statement;
 using SqlSession = Poco::Data::Session;
 
-#define TEMPLATES_PATH	"templates"
-#define DESC    "usage: ./tests.exe --ip=<machine_ip>\n \
-                example: ./tests.exe --ip=192.168.31.63"
-#define ERROR_404 " <html lang=\"ru\"> \
-                    <head><title>Web Server</title></head> \
-                    <body><h1>Error 404: page not found</h1></body> \
-                    </html>"
-#define DEFAULT_IP "192.168.1.50"
 namespace Config // глобальные переменные
 {
     string host     = "127.0.0.1",
-           login    = "hstiv",
-           password = "112233qq",
-           database = "test_db",
+           login    = "",
+           password = "",
+           database = "",
            ip = "";
     int port = 8080;
-    int sql_port = 6033;
-    int n_shards = 2;
+    int sql_port = -1;
+    string cache_servers = "";
 }
 
 #define SQL_HANDLE(...)                                   \
@@ -136,7 +135,7 @@ SqlSession *create_SQL_session()  // Создаём сессию с базой �
                                ";user=" +  Config::login + 
                                ";db=" +  Config::database + 
                                ";password=" +  Config::password +
-                               ";port=" + std::to_string(Config::sql_port);
+                               ";port=" + STR(Config::sql_port);
 
     Poco::Data::MySQL::Connector::registerConnector();
     SqlSession *session_ptr = NULL;
@@ -147,24 +146,102 @@ SqlSession *create_SQL_session()  // Создаём сессию с базой �
     return session_ptr;
 }
 
-int get_shard_id(const string &login)
-{
-    return std::hash<string>{}(login) % Config::n_shards;
-}
+/* =================      Кеш      ================= */
 
-void WAIT_ALL_THREADS(vector<thread *> &vec) // закрытие потоков
+namespace Cache
 {
-    int i;
-    for(i = 0; i < vec.size(); i++) 
+    static ignite::thin::IgniteClient _client;
+    static ignite::thin::cache::CacheClient<string, string> _cache;
+
+    void init()
     {
-        vec[i]->join(); 
-        delete vec[i];
+        ignite::thin::IgniteClientConfiguration cfg;
+        cfg.SetEndPoints(Config::cache_servers);
+        cfg.SetPartitionAwareness(true);
+        try
+        {
+            _client = ignite::thin::IgniteClient::Start(cfg);
+            _cache = _client.GetOrCreateCache<string, string>("persons");
+        }
+        catch (ignite::IgniteError* err)
+        {
+            cout << "error:" << err->what() << endl;
+            throw;
+        }
     }
+
+    void put(string &login, string &val)
+    {
+        _cache.Put(login, val);
+    }
+
+    void remove(string &login)
+    {
+        _cache.Remove(login);
+    }
+
+    int size()
+    {
+        return _cache.GetSize(ignite::thin::cache::CachePeekMode::ALL);
+    }
+
+    bool get(string &login, string &val) // val - json-строка 
+    {
+        try
+        {
+            val = _cache.Get(login);
+            return val != "";
+        }
+        catch(...)
+        {
+            val = "";
+            return false;
+        }
+    }
+
+    void remove_all()
+    {
+        _cache.RemoveAll();;
+    }
+
 }
 
-void argv2map(int argc, char *argv[], std::map<string, string> &args, const string &desc)
+/* ================= Общие функции ================= */
+
+bool starts_with(const string &str, const string &prefix)
+{
+    if(prefix.size() > str.size())
+        return false;
+
+    int i;
+    for(i = 0; i < prefix.size(); i++)
+    {
+        if(str[i] != prefix[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static char scheme[] = 
+"usage: ./%-12s %-30s \\\n"
+"         %-12s %-30s \\\n"
+"         %-12s %-30s \\\n"
+"         %-12s %-30s \\\n"
+"         %-12s %-30s \\\n"
+"         %-12s %-30s \n"
+"example: ./%-12s %-30s \\\n"
+"           %-12s %-30s \\\n"
+"           %-12s %-30s \\\n"
+"           %-12s %-30s \\\n"
+"           %-12s %-30s \\\n"
+"           %-12s %-30s \n";
+
+std::map<string, string> argv2map(int argc, char *argv[], const string &desc)
 {
     int i;
+    std::map<string, string> args;
     for(i = 1; i < argc; i++)
     {
         int j;
@@ -174,16 +251,28 @@ void argv2map(int argc, char *argv[], std::map<string, string> &args, const stri
         {
             cout << "ERROR in argc[" + STR(i) + "]" << endl;
             cout << desc << endl;
-            return;
+            return args;
         }
         args[arg.substr(0, j)] = arg.substr(j + 1, arg.size() - j);
     }
+    return args;
 }
 
-void argv2map(int argc, char *argv[], std::map<string, string> &args)
+std::map<string, string> argv2map(int argc, char *argv[])
 {
     string desc = "";
-    argv2map(argc, argv, args, desc);
+    return argv2map(argc, argv, desc);
 }
+
+#define ARG_COUNT 6
+
+#define CHECK_ARG(NAME, ...)                               \
+    if(args.find("--" #NAME) == args.end())                \
+    {                                                      \
+        cout << "ERROR: not find --" #NAME " arg" << endl; \
+        cout << DESC << endl;                              \
+        return 0;                                          \
+    }                                                      \
+    Config::NAME = __VA_ARGS__(args["--" #NAME]);          \
 
 #endif
