@@ -10,5 +10,6 @@ make env
 
 Be ready, it will take around an hour
 
-
+```
 Vagrantfile will be ready later
+```
