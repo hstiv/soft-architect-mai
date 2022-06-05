@@ -82,9 +82,8 @@ TEST(test_create, basic_test_set) // создание базы
     testing::internal::CaptureStdout();
 
     vector<thread *> vec_threads(Config::n_shards);
-    int i;
 
-    for(i = 0; i < vec_threads.size(); i++) // запуск потоков
+    for(int i = 0; i < vec_threads.size(); i++) // запуск потоков
     {
         vec_threads[i] = new thread(recreate_table, i);
     }
@@ -100,10 +99,10 @@ TEST(test_add, basic_test_set) // добавление записей с пос�
                               {string("vano"), string("Momonosuke"), string("Doppo"), 42}};
 
     vector<thread *> vec_threads(persons.size()); // каждая запись в своём потоке, благо их не много в целях теста
-    int i;
+
     testing::internal::CaptureStdout();
 
-    for(i = 0; i < vec_threads.size(); i++) // параллельно создаём запросы на добавление
+    for(int i = 0; i < vec_threads.size(); i++) // параллельно создаём запросы на добавление
     {
         vec_threads[i] = new thread(add_person, persons[i]);
     }
@@ -112,14 +111,14 @@ TEST(test_add, basic_test_set) // добавление записей с пос�
     sleep(4); // ждём на всякий случай
     vector<int> res(persons.size()); // результаты запросов
 
-    for(i = 0; i < vec_threads.size(); i++) // параллельно создаём запросы на поиск
+    for(int i = 0; i < vec_threads.size(); i++) // параллельно создаём запросы на поиск
     {
         vec_threads[i] = new thread(check_person, persons[i], res.data() + i);
     }
     WAIT_ALL_THREADS(vec_threads);
 
     ASSERT_TRUE(testing::internal::GetCapturedStdout() == ""); // проверяем ошибки
-    for(i = 0; i < res.size(); i++) // проверяем ответы
+    for(int i = 0; i < res.size(); i++) // проверяем ответы
     {
         ASSERT_TRUE(res[i]);
     }
@@ -127,29 +126,7 @@ TEST(test_add, basic_test_set) // добавление записей с пос�
 
 int main(int argc, char *argv[])
 {
-    std::map<string, string> args; // разбор входных параметров
-    argv2map(argc, argv, args, DESC);
-
-    if(args.find("--ip") == args.end())
-    {
-        cout << "WARNING: not find --ip arg, DEFAULT_IP=192.168.1.50 will be used" << endl;
-        Config::ip = DEFAULT_IP;
-        cout << DESC << endl;
-        return 0;
-    }
-    else
-        Config::ip = args["--ip"];
-
-    try
-    {
-        testing::InitGoogleTest(&argc, argv);
-    }
-    catch(...)
-    {
-        cout << "ERROR" << endl;
-        cout << DESC << endl;
-        return(-1);
-    }
+    testing::InitGoogleTest(&argc, argv);
 
     return RUN_ALL_TESTS();
 }

@@ -95,14 +95,14 @@ using SqlSession = Poco::Data::Session;
                     <head><title>Web Server</title></head> \
                     <body><h1>Error 404: page not found</h1></body> \
                     </html>"
-#define DEFAULT_IP "192.168.1.50"
+
 namespace Config // глобальные переменные
 {
     string host     = "127.0.0.1",
            login    = "hstiv",
            password = "112233qq",
            database = "test_db",
-           ip = "";
+           ip = "192.168.1.50";
     int port = 8080;
     int sql_port = 6033;
     int n_shards = 2;
@@ -160,30 +160,6 @@ void WAIT_ALL_THREADS(vector<thread *> &vec) // закрытие потоков
         vec[i]->join(); 
         delete vec[i];
     }
-}
-
-void argv2map(int argc, char *argv[], std::map<string, string> &args, const string &desc)
-{
-    int i;
-    for(i = 1; i < argc; i++)
-    {
-        int j;
-        string arg(argv[i]);
-        j = std::find(arg.begin(), arg.end(), '=') - arg.begin();
-        if(j == arg.size())
-        {
-            cout << "ERROR in argc[" + STR(i) + "]" << endl;
-            cout << desc << endl;
-            return;
-        }
-        args[arg.substr(0, j)] = arg.substr(j + 1, arg.size() - j);
-    }
-}
-
-void argv2map(int argc, char *argv[], std::map<string, string> &args)
-{
-    string desc = "";
-    argv2map(argc, argv, args, desc);
 }
 
 #endif
