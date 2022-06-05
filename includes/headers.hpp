@@ -1,5 +1,5 @@
-#ifndef DEFS_HPP
-#define DEFS_HPP
+#ifndef HEADERS_HPP
+#define HEADERS_HPP
 
 #include <stdio.h>
 #include <iostream>
